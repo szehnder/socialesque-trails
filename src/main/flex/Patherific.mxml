@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Application xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx" 
+			   minWidth="955" minHeight="600"
+			   width="100%" height="100%" initialize="doInit()" 
+			   backgroundColor="0x555555"
+			   resize="handleResize(event)"
+			   xmlns:trails="com.socialesque.trails.*" 
+			   xmlns:view="com.socialesque.trails.view.*" 
+			   xmlns:dialogs="com.socialesque.trails.view.dialogs.*"
+			   enterFrame="handleEnterFrame(event)" frameRate="60">
+	<s:layout>
+		<s:VerticalLayout/>
+	</s:layout>
+	<fx:Declarations>
+		<mx:WipeLeft id="wipeLeft"/>
+		
+		<mx:WipeRight id="wipeRight"/>
+
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			import com.socialesque.zlogger.http.control.MainController;
+			import com.socialesque.zlogger.http.event.GetNewSessionIdEvent;
+			import TrailsAssets;
+			import mx.controls.Image;
+			import mx.controls.Text;
+			import com.socialesque.utils.ColorGenerator;
+			import com.socialesque.trails.model.Cell;
+			import mx.events.ResizeEvent;
+			import com.socialesque.trails.model.PointF;
+			import com.adobe.cairngorm.control.CairngormEvent;
+			import com.socialesque.trails.control.TrailsController;
+			import com.adobe.cairngorm.control.CairngormEventDispatcher;
+			import com.socialesque.trails.event.CreateSessionEvent;
+			import com.socialesque.trails.model.TrailsModel;
+			import com.socialesque.trails.view.dialogs.GridControls;
+			import mx.managers.PopUpManager;
+			import mx.core.IFlexDisplayObject;
+			import mx.collections.ArrayCollection;
+			import com.socialesque.zlogger.ZLog;
+			import mx.containers.Canvas;
+			
+			private var drawTimer:Timer;
+			private var logger:ZLog = ZLog.getInstance();
+			private var controller:TrailsController = TrailsController.getInstance();
+			[Bindable] private var model:TrailsModel = TrailsModel.getInstance();
+			private var lastFrameAt:Date = new Date();
+			private var frameCount:Number = 0;
+			 private var avgFrameDuration:Number = 0;
+			 [Bindable] private var fps:Number = 0;
+			 
+			 private var prevCell:Cell;
+			
+			private function doInit() : void {
+				model.sessionDataDictionary = new Dictionary();
+				model.colorHash = new Dictionary(); 
+				logger.httpEnabled = true;
+				logger.model.serverUrl = "http://localhost:3000/";
+				logger.localEnabled = false;
+				logger.localLogger.connectionDomain = "app#ZAnalytics.6F766B1FFB98FF03CF4D9495D8CE4203EB2CD56C.1";
+				logger.preflight();
+			
+				drawTimer = new Timer(50);
+				
+				this.showGridControls();
+				enableListeners();
+				//doNew();
+				new GetNewSessionIdEvent().dispatch();
+			}
+			
+			private function doComplete() : void {
+				model.gridCanvas = this.gridCanvas;
+				this.controls.gridControls.update();
+			}
+			
+			private function handleEnterFrame(event:Event) : void {
+				var now:Date = new Date();
+				var elapsed:Number = now.getTime()-lastFrameAt.getTime();
+				this.avgFrameDuration = ((avgFrameDuration*frameCount)+elapsed)/(frameCount+1);
+				this.fps = 1000/this.avgFrameDuration;
+				lastFrameAt = new Date();
+				frameCount++;
+			}
+			
+			private function handleResize(event:ResizeEvent) : void {
+				if (this.gridCanvas!=null)
+					for each (var cell:Cell in model.cells)
+						cell.setDimensions(model.gridSize, this.gridCanvas.width, this.gridCanvas.height);
+				drawPath();
+			}
+			
+			private function enableListeners() : void {
+				CairngormEventDispatcher.getInstance().addEventListener(TrailsController.NOTIFY_SESSION_CREATED, handleSessionCreated);
+				CairngormEventDispatcher.getInstance().addEventListener(TrailsController.NOTIFY_RENDER_REQUESTED, handleRefresh);
+				CairngormEventDispatcher.getInstance().addEventListener(MainController.UPDATED_SESSION_ID, handleNewLoggerSessionCreated);
+			}
+			
+			private function disableListeners() : void {
+				CairngormEventDispatcher.getInstance().removeEventListener(TrailsController.NOTIFY_SESSION_CREATED, handleSessionCreated);
+				CairngormEventDispatcher.getInstance().removeEventListener(MainController.UPDATED_SESSION_ID, handleNewLoggerSessionCreated);
+			}
+			
+			private function handleNewLoggerSessionCreated(event:CairngormEvent) : void {
+				new CreateSessionEvent().dispatch();
+				logger.setTag("application", "Patherific");
+				logger.setTag("version", "0.2");
+			}
+			
+			private function handleMouseDown(event:MouseEvent) : void {
+				model.mouseDown = true;
+				if (model.isRecording)
+					drawTimer.start();
+			}
+			
+			private function handleMouseUp(event:MouseEvent) : void {
+				model.mouseDown = false;
+				if (model.isRecording)
+					drawTimer.stop();
+				this.drawPath();
+			}
+			
+			private function handleRefresh(event:CairngormEvent) : void {
+				if (model.showGrid || model.showFlowVectors)
+					this.runGridStats();
+				this.drawPath();
+			}
+			
+			private function markMousePosition(event:TimerEvent) : void {
+				var p0:Point = new Point(canvas.mouseX, canvas.mouseY);
+				if (p0.x>0 && p0.x<canvas.width && p0.y>0 && p0.y<canvas.height) {
+					var p:PointF = new PointF(p0.x/canvas.width,  p0.y/canvas.height);
+					var targetArray:Array = model.sessionDataDictionary[model.activeSession] as Array;
+					var now:Date = new Date();
+					var elapsed:int = now.getTime()-model.startedRecordingAt.getTime();
+					targetArray.push({x: p.x , y: p.y, timestamp: now, timecode: elapsed});
+					this.runGridStats();
+					logger.probe("path.point.x", p.x, elapsed);
+					logger.probe("path.point.y", p.y, elapsed); 
+					drawPath();
+				}
+			}
+			
+			private function drawPath() : void {
+				if (canvas!=null) {
+					var g:Graphics = canvas.graphics;
+					g.clear();
+					var radius:uint = 4;
+					
+					if (model.activeSession!=null) {
+						var shownSessions:Array = [model.activeSession];
+						if (model.showAllSessions) {
+							shownSessions = model.sessions.source;
+						}
+						
+						if (model.showTrails) {
+							for each (var session:Object in shownSessions) {
+								var pointHistory:Array = model.sessionDataDictionary[session] as Array;
+								g.lineStyle(1, session.color); //0xf9a81d
+								var alpha:Number;
+								var i:Number = 0;
+								for (i=0;i<pointHistory.length;i++) {
+									if (this.ageAlphaOption.selected) {
+										alpha = i/pointHistory.length;
+									} else {
+										alpha = 1.0;
+									}
+									g.lineStyle(1, session.color, alpha); //0xf9a81d
+									var p0:Object = pointHistory[i];
+									if (p0!=null) {
+										if (i==0) {
+											g.moveTo(pointHistory[i].x*canvas.width, pointHistory[i].y*canvas.height);
+										} else {
+											g.lineTo(pointHistory[i].x*canvas.width, pointHistory[i].y*canvas.height);
+										}
+									}
+								}
+								if (session==model.activeSession) {
+									for (i=0;i<pointHistory.length;i++) {
+										var p:Point = new Point(pointHistory[i].x*canvas.width, pointHistory[i].y*canvas.height);
+										if (p!=null) {
+											//	g.beginFill(session.color, alpha);
+											g.drawEllipse(p.x-radius/2, p.y-radius/2, radius, radius);
+											//	g.endFill();
+										}
+									}
+								}
+							
+							}
+						}
+						
+						
+						
+					}
+				}
+				drawGrid();
+			}
+			
+			private function doReplay() : void {
+				trace("FIXME -- need to implement doReplay() in Patherific!");
+			}
+			
+			private function toggleRecording() : void {
+				if (!model.isRecording) {
+					drawTimer.addEventListener(TimerEvent.TIMER, markMousePosition);	
+					model.isRecording = true;
+				} else {
+					drawTimer.removeEventListener(TimerEvent.TIMER, markMousePosition);	
+					model.isRecording = false;
+				}
+			}
+			
+			private function doNew() : void {
+				new CreateSessionEvent().dispatch();
+			}
+			
+			private function showGridControls() : void {
+				
+			}
+			
+			private function handleSessionCreated(event:CairngormEvent) : void {
+				model.isRecording = true;
+				model.startedRecordingAt = new Date();
+				drawTimer.addEventListener(TimerEvent.TIMER, markMousePosition);
+				this.runGridStats();
+				this.drawPath();
+				//drawTimer.start();
+			}
+			
+			private function drawGrid() : void {
+				if (gridCanvas!=null) {
+					if (gridCanvas.numChildren>0)
+						gridCanvas.removeAllElements();
+					var g:Graphics = gridCanvas.graphics;
+					g.clear();
+					if (model.showGrid || model.showFlowVectors) {
+					
+						for each (var cell:Cell in model.cells) {
+						//	cell.setDimensions(model.gridSize, this.gridCanvas.width, this.gridCanvas.height);
+							if (model.showGrid) {
+								g.lineStyle(1, 0x222222);
+								g.beginFill(0xaaaaaa, cell.pointTally/50);
+								g.drawRect(cell.x, cell.y, cell.width, cell.height);
+								g.endFill();
+							}	
+							g.lineStyle(1, 0x222222);
+							if (cell.flowVector!=null) {
+								/*var label:Text = new Text();
+								label.text = cell.flowVector.toString();
+								label.move(cell.x+cell.width/2, cell.y+cell.height/2);
+								gridCanvas.addChild(label);*/ 
+								if (!model.mouseDown && model.showFlowVectors) {
+									if (cell.flowVector.x!=0 || cell.flowVector.y!=0) {
+										var origin:Point = new Point(cell.x+(cell.width/2), cell.y+(cell.height/2)); 
+										var arrow:Image = new Image();
+										arrow.source = TrailsAssets.blueArrow;
+										arrow.move(origin.x, origin.y);
+										arrow.rotation = 180*cell.flowVectorRotation/Math.PI;
+										gridCanvas.addElement(arrow);
+									}
+								}
+								/*g.moveTo(origin.x, origin.y);
+								g.lineTo(origin.x+10*cell.flowVector.x, origin.y+10*cell.flowVector.y);
+								g.lineStyle(1, 0xff0000);
+								g.drawRect(origin.x, origin.y, 2, 2);
+								g.lineStyle(1, 0x00ff00);
+								g.drawRect(origin.x+10*cell.flowVector.x, origin.y+10*cell.flowVector.y, 2, 2);*/
+							}
+						}
+								
+					}
+				}
+			} 
+			
+			private function handleShowAllSessionsChange() : void {
+				model.showAllSessions = this.showAllSessionsOption.selected;
+				runGridStats();
+				drawPath();
+			}
+			
+			public function runGridStats() : void {
+				var shownSessions:Array = [model.activeSession];
+				if (model.showAllSessions) {
+					shownSessions = model.sessions.source;
+				}
+				for each (var cell:Cell in model.cells)
+					cell.clearStats();
+
+				for each (var session:Object in shownSessions) {
+					for each (var point:Object in model.sessionDataDictionary[session]) {
+					 	var col:int = Math.floor(point.x*model.gridSize);
+					 	var row:int = Math.floor(point.y*model.gridSize);
+					 	var cellIndex:int = row*model.gridSize+col;
+					 	cell = model.cells.getItemAt(cellIndex) as Cell; 
+					 	if (this.prevCell!=null && cell.index!=this.prevCell.index)
+					 		this.prevCell.addNewNextCell(cell);
+						cell.addPoint(point.x, point.y);
+						cell.setDimensions(model.gridSize, this.gridCanvas.width, this.gridCanvas.height);
+						this.prevCell = cell;
+					}
+					this.prevCell=null;
+				}
+				
+			}
+			
+			private function handleShowTrailsChange() : void {
+				model.showTrails = this.showTrailsOption.selected;
+				drawPath();
+			}
+		]]>
+	</fx:Script>
+	
+		<view:Header id="header" x="0" y="0" width="100%" dropShadowVisible="true"/>
+		<s:BorderContainer width="100%" height="100%" x="0" y="{header.height-8}" borderStyle="solid" 
+			borderColor="0x222222" backgroundColor="0x333333" backgroundAlpha="1.0" dropShadowVisible="true"
+			>
+			<s:layout>
+				<s:VerticalLayout gap="0"/>
+			</s:layout>
+			<s:BorderContainer width="100%"   backgroundColor="0x222222" backgroundAlpha="1.0"   color="0xaaaaaa" height="30">
+				<!--<mx:LinkButton label="Replay" click="doReplay()" enabled="false"/>-->
+				<s:layout>
+					<s:HorizontalLayout paddingTop="4" paddingBottom="4" paddingLeft="8" verticalAlign="middle"/>
+				</s:layout>
+				<s:CheckBox id="showTrailsOption" label="Show Trails" selected="{model.showTrails}" change="handleShowTrailsChange()"/>
+				<s:CheckBox id="ageAlphaOption" label="Show Decay" selected="true" click="drawPath()" enabled="{showTrailsOption.selected}"/>
+				<s:CheckBox id="showAllSessionsOption" label="Include All Sessions" selected="{model.showAllSessions}" change="handleShowAllSessionsChange()"/>
+				<mx:Spacer width="100%"/>
+				<s:Label text="Fps:"/>
+				<s:Label text="{Number(this.fps).toPrecision(4)}"/>
+				<mx:LinkButton label="{(model.isRecording) ? 'Stop Recording' : 'Start Recording'}" click="toggleRecording()"/>
+			</s:BorderContainer>
+			<s:Group width="100%" height="100%" >
+				
+				<s:Group id="canvas" width="100%" height="100%"  x="0" y="0" />
+				<s:Group id="gridCanvas" width="100%" height="100%" x="0" y="0" creationComplete="doComplete()" mouseDown="handleMouseDown(event)" mouseUp="handleMouseUp(event)"
+					/>
+				<view:Controls id="controls" width="100%" height="100%" x="0" y="0"/>
+				
+			</s:Group>
+		</s:BorderContainer>
+	
+		
+	
+</s:Application>

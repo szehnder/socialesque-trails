@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				   xmlns:s="library://ns.adobe.com/flex/spark" 
+				   xmlns:mx="library://ns.adobe.com/flex/mx">
+	<s:layout>
+		<s:VerticalLayout gap="0"/>
+	</s:layout>
+	<fx:Declarations>
+		<s:Parallel id="openUp">
+			<s:Resize target="{controls}" heightFrom="0" heightTo="200"/>
+		</s:Parallel>
+		<s:Parallel id="closeUp">
+			<s:Resize target="{controls}" heightFrom="200" heightTo="0"/>
+		</s:Parallel>
+		
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			import com.socialesque.trails.model.Cell;
+			import com.socialesque.trails.event.NotifyRenderRequested;
+			import com.socialesque.trails.model.TrailsModel;
+			import mx.managers.PopUpManager;
+			[Bindable] private var model:TrailsModel = TrailsModel.getInstance();
+			
+			[Bindable] public var title:String = "Grid Settings";
+			
+			private function toggleVisibility() : void {
+				controls.visible = !controls.visible;
+			}
+			
+			private function changeGridVisibility() : void {
+				model.showGrid = !model.showGrid;
+				new NotifyRenderRequested().dispatch();
+			}
+			
+			private function changeGridSize() : void {
+				model.gridSize = this.gridSizeInput.value;
+				updateGrid();
+				new NotifyRenderRequested().dispatch();
+			}
+			
+			public function update() : void {
+				updateGrid();
+				new NotifyRenderRequested().dispatch();
+			}
+			
+			private function updateGrid() : void {
+				model.cells.source = new Array();
+				var columnCount:Number = model.gridSize;
+				var rowCount:Number = model.gridSize;
+				var xStep:Number = model.gridCanvas.width/rowCount;
+				var yStep:Number = model.gridCanvas.height/columnCount;
+				for (var index:uint=0;index<(model.gridSize*model.gridSize);index++) {
+					var row:int =  Math.floor(index/columnCount);
+					var col:int = index%columnCount;
+					var cell:Cell = new Cell(index, col/columnCount, row/rowCount);
+					cell.setDimensions(model.gridSize, model.gridCanvas.width, model.gridCanvas.height);
+					model.cells.addItem(cell);
+				}
+			}
+			
+			private function changeFlowVectorVisibility() : void {
+				model.showFlowVectors = this.showFlowVectorsOption.selected;
+				new NotifyRenderRequested().dispatch();
+			}
+		]]>
+	</fx:Script>
+	<s:Group width="100%" height="24" click="toggleVisibility()">
+		<s:layout>
+			<s:VerticalLayout paddingBottom="12" paddingTop="4" horizontalAlign="center" verticalAlign="middle"/>
+		</s:layout>
+		<!--s:BorderContainer id="labelBox" width="100%" cornerRadius="10" borderStyle="solid" backgroundColor="0xaaaaaa" backgroundAlpha="1.0" >-->
+			<mx:Label text="{title}"/>
+		<!--</s:BorderContainer>-->
+		<s:BorderContainer width="100%" height="8" backgroundColor="0xaaaaaa" backgroundAlpha="1.0" />	
+	</s:Group>
+	
+	<s:BorderContainer id="controls"  width="100%" visible="false" height="0" showEffect="openUp" hideEffect="closeUp" 
+			  backgroundColor="0xdddddd" backgroundAlpha="0.5">
+		<s:layout>
+			<s:VerticalLayout  paddingTop="8" paddingLeft="10" paddingRight="6" paddingBottom="4"/>
+		</s:layout>
+		<s:CheckBox id="showGridOption" selected="{model.showGrid}" change="changeGridVisibility()" label="Show Grid"/>
+		<s:HGroup width="100%">
+			<s:Label text="Grid Size"/>
+			<s:HSlider id="gridSizeInput" width="100%" maximum="100" snapInterval="5" value="{model.gridSize}" change="changeGridSize()" minimum="5"/>
+			<s:Label text="{gridSizeInput.value+'x'+gridSizeInput.value}"/>
+		</s:HGroup>
+		<s:CheckBox id="showFlowVectorsOption" selected="{model.showFlowVectors}" change="changeFlowVectorVisibility()" label="Show Flow Vectors"/>
+	</s:BorderContainer>
+</s:Group>

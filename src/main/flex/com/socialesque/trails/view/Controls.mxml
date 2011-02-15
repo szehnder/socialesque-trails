@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" width="100%" height="100%" xmlns:dialogs="com.socialesque.trails.view.dialogs.*" initialize="doInit()" xmlns:view="com.socialesque.trails.view.*" >
+	
+	<fx:Script>
+		<![CDATA[
+			import com.socialesque.trails.control.TrailsController;
+			import com.adobe.cairngorm.control.CairngormEventDispatcher;
+			import com.socialesque.trails.event.NotifySessionCreated;
+			import com.adobe.cairngorm.control.CairngormEvent;
+			import com.socialesque.trails.event.CreateSessionEvent;
+			import com.socialesque.trails.model.TrailsModel;
+			import com.socialesque.zlogger.ZLog;
+			import mx.collections.ArrayCollection;
+			
+			[Bindable] private var model:TrailsModel = TrailsModel.getInstance();
+			private var logger:ZLog = ZLog.getInstance();
+			
+			private function doInit() : void {
+				enableListeners();
+			}
+			
+			private function enableListeners() : void {
+				
+			} 
+			
+			private function disableListeners() : void {
+				
+			} 
+			
+			
+		]]>
+	</fx:Script>
+	<s:HGroup id="footerControls" width="100%" height="100%" verticalAlign="bottom">
+			<view:SessionsPanel id="sessionsControl"/>
+			<dialogs:GridControls id="gridControls" />
+	</s:HGroup>
+	
+	<!--<mx:Box id="logBoxButton" height="100%" width="14" backgroundColor="0x222222" backgroundAlpha="1.0" >
+		<mx:LinkButton height="100%" width="100%" cornerRadius="0" label="{(model.isShowingLog) ? '&lt;' : '&gt;'}" click="{model.isShowingLog = !model.isShowingLog}" 
+			fontSize="9" color="0xf07f20" paddingLeft="0" paddingRight="0"/>
+	</mx:Box>-->
+</s:Group>

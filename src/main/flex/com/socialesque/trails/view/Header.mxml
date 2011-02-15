@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:HBox xmlns:mx="http://www.adobe.com/2006/mxml" width="100%" backgroundColor="0x333333" backgroundAlpha="1.0" cornerRadius="10" borderStyle="solid" borderColor="0x222222"
+	paddingLeft="10" paddingBottom="12" paddingTop="6" paddingRight="12">
+	<mx:Script>
+		<![CDATA[
+			import TrailsAssets;
+			
+		]]>
+	</mx:Script>
+	<mx:SWFLoader source="{TrailsAssets.trailsLogo}"/>
+	<mx:Spacer width="100%"/>
+	<mx:SWFLoader source="{TrailsAssets.demoText}" verticalAlign="middle" height="100%"/>
+</mx:HBox>
